@@ -1,51 +1,45 @@
-
 from flask import Flask, request, send_file
 from PIL import Image, ImageDraw, ImageFont
-import io
+from io import BytesIO
 import os
 
 app = Flask(__name__)
 
 @app.route('/generate', methods=['POST'])
 def generate_image():
-    title = request.form.get('title', '').upper()
-    if not title:
-        return 'Missing title', 400
+    # Lấy tiêu đề từ form
+    title = request.form.get('title', 'Không có tiêu đề')
 
-    # Tạo ảnh
-    width, height = 1080, 1080
-    image = Image.new("RGB", (width, height), color="#1F1F1F")
-    draw = ImageDraw.Draw(image)
+    # Tạo ảnh trắng kích thước 1080x1080
+    img = Image.new('RGB', (1080, 1080), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
 
+    # Đường dẫn font (mặc định hệ thống Ubuntu trên Render)
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    font = ImageFont.truetype(font_path, 60)
 
-    # Phân tích nội dung tô vàng bằng **
-    words = title.split(" ")
-    x, y = 100, 300
-    space = draw.textlength(' ', font=font)
-    max_width = width - 200
+    # Load font với fallback nếu font không tồn tại
+    try:
+        font = ImageFont.truetype(font_path, 60)
+    except IOError:
+        font = ImageFont.load_default()
 
-    for word in words:
-        color = "#FFFFFF"
-        if word.startswith("**") and word.endswith("**"):
-            word = word[2:-2]
-            color = "#FFC107"
+    # Tính toán vị trí để căn giữa
+    text_bbox = draw.textbbox((0, 0), title, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+    position = ((1080 - text_width) // 2, (1080 - text_height) // 2)
 
-        word_width = draw.textlength(word + " ", font=font)
-        if x + word_width > max_width:
-            x = 100
-            y += 100
+    # Vẽ text lên ảnh
+    draw.text(position, title, fill=(0, 0, 0), font=font)
 
-        draw.text((x, y), word + " ", font=font, fill=color)
-        x += word_width
-
-    # Xuất ra file ảnh
-    img_io = io.BytesIO()
-    image.save(img_io, 'JPEG', quality=100)
+    # Lưu ảnh vào bộ nhớ
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
     img_io.seek(0)
-    return send_file(img_io, mimetype='image/jpeg')
 
+    return send_file(img_io, mimetype='image/png')
+
+# Cần cho Render chạy đúng
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(debug=False, host='0.0.0.0', port=port)
