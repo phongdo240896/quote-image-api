@@ -1,53 +1,51 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import FileResponse
+
+from flask import Flask, request, send_file
 from PIL import Image, ImageDraw, ImageFont
-import textwrap
-import uuid
+import io
+import os
 
-app = FastAPI()
+app = Flask(__name__)
 
-@app.post("/generate")
-def generate_image(title: str = Form(...)):
+@app.route('/generate', methods=['POST'])
+def generate_image():
+    title = request.form.get('title', '').upper()
+    if not title:
+        return 'Missing title', 400
+
+    # Tạo ảnh
     width, height = 1080, 1080
-    background_color = (31, 31, 31)
-    highlight_color = (255, 193, 7)
-    text_color = (255, 255, 255)
+    image = Image.new("RGB", (width, height), color="#1F1F1F")
+    draw = ImageDraw.Draw(image)
 
-    img = Image.new('RGB', (width, height), color=background_color)
-    draw = ImageDraw.Draw(img)
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font = ImageFont.truetype(font_path, 60)
 
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 60)
-    margin = 100
-    max_chars = 26
-    line_height = 90
+    # Phân tích nội dung tô vàng bằng **
+    words = title.split(" ")
+    x, y = 100, 300
+    space = draw.textlength(' ', font=font)
+    max_width = width - 200
 
-    formatted = title.upper().replace("**", "|")
-    words = formatted.split()
-    lines = []
-    line = ""
     for word in words:
-        test = line + " " + word if line else word
-        if len(test) > max_chars:
-            lines.append(line)
-            line = word
-        else:
-            line = test
-    if line:
-        lines.append(line)
+        color = "#FFFFFF"
+        if word.startswith("**") and word.endswith("**"):
+            word = word[2:-2]
+            color = "#FFC107"
 
-    total_height = line_height * len(lines)
-    y = (height - total_height) // 2
+        word_width = draw.textlength(word + " ", font=font)
+        if x + word_width > max_width:
+            x = 100
+            y += 100
 
-    for line in lines:
-        x = margin
-        for word in line.split():
-            is_highlight = word.startswith("|") and word.endswith("|")
-            w_clean = word.strip("|")
-            color = highlight_color if is_highlight else text_color
-            draw.text((x, y), w_clean + " ", font=font, fill=color)
-            x += draw.textlength(w_clean + " ", font=font)
-        y += line_height
+        draw.text((x, y), word + " ", font=font, fill=color)
+        x += word_width
 
-    filename = f"/mnt/data/{uuid.uuid4().hex}.png"
-    img.save(filename)
-    return FileResponse(filename, media_type="image/png")
+    # Xuất ra file ảnh
+    img_io = io.BytesIO()
+    image.save(img_io, 'JPEG', quality=100)
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/jpeg')
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
